@@ -10,7 +10,6 @@ KEY_DOWN = 2
 KEY_LEFT = 3
 KEY_RIGHT = 4
 
-
 function newGame()
     game = {
         state = "inplay", -- "ending"
