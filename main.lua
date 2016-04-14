@@ -216,17 +216,19 @@ end
 function drawDude(dude)
     local action = "line"
     local width = 5
-    love.graphics.setColor(dude.color)
+    local alpha = 255
     if dude.state == "moving" then
         -- we good
     elseif dude.state == "attacking" then
         action = "fill"
     elseif dude.state == "defending" then
-        love.graphics.setColor(dude.color[1], dude.color[2], dude.color[3], 75)
+        alpha = 75
         action = "fill"
     elseif dude.state == "cooldown" then
-        width = 1
+        alpha = 60
+        --width = 1
     end
+    love.graphics.setColor(dude.color[1], dude.color[2], dude.color[3], alpha)
     love.graphics.setLineWidth(width)
     love.graphics.circle(action, dude.pos.x, dude.pos.y, dude.radius, 50)
 end
