@@ -1,12 +1,12 @@
-ripple.love:
-	zip -r ripple.love *
+ballbusterz.love:
+	zip -r ballbusterz.love *
 
 clean:
-	rm -f ripple.love
+	rm -f ballbusterz.love
 	rm -rf releases/*
 
-run: ripple.love
-	love-hg ripple.love
+run: ballbusterz.love
+	love-hg ballbusterz.love
 
 release:
 	love-release -lmw
