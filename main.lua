@@ -169,8 +169,12 @@ function updateDude(dt, dude)
         if dude.cooldown < 0 then
             dude.state = "moving"
         end
+    end
 
-    elseif dude.state == "moving" then
+    -- If we made this part of the if-else chain above then it wouldn't be
+    -- possible to go immediately from cooldown back to attacking/defending
+    -- without a frame of moving in between, which creates some weird movement
+    if dude.state == "moving" then
         if isDown({dude.keys[KEY_UP]}) then
             dude.attacked = true
             dude.state = "attacking"
