@@ -46,6 +46,8 @@ function newDude(opts)
         color = opts.color or {0, 200, 0},
         keys = opts.keys or {"w", "s", "a", "d"},
 
+        shine_sound = opts.shine_sound or love.audio.newSource("assets/shine.wav", "static"),
+
         state = "moving", -- "attacking", "defending", "cooldown", "dead"
         force_cooldown = false,
         cooldown = 0,
@@ -177,6 +179,7 @@ function updateDude(dt, dude)
         if isDown({dude.keys[KEY_UP]}) then
             dude.attacked = true
             dude.state = "attacking"
+            love.audio.play(dude.shine_sound)
         elseif isDown({dude.keys[KEY_DOWN]}) then
             dude.defended = true
             dude.state = "defending"
