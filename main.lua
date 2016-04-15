@@ -37,7 +37,8 @@ function newDude(opts)
     return {
         pos = opts.pos or {x = w/2, y = h/2},
         radius = opts.radius or 50,
-        speed = opts.speed or 500,
+        speed = opts.speed or 100,
+        slide = opts.slide or 0.1,
         slow_speed_mult = opts.slow_speed_mult or 0.2,
         defend_cooldown = opts.defend_cooldown or 0.15,
         defend_max = opts.defend_max or 1,
@@ -49,6 +50,7 @@ function newDude(opts)
         shine_sound = opts.shine_sound or love.audio.newSource("assets/shine.wav", "static"),
 
         state = "moving", -- "attacking", "defending", "cooldown", "dead"
+        curr_speed = 0,
         force_cooldown = false,
         cooldown = 0,
         action_timer = 0,
@@ -186,18 +188,28 @@ function updateDude(dt, dude)
         end
     end
 
-    local speed = dude.speed
-    if dude.state ~= "moving" then
-        speed = speed * dude.slow_speed_mult
-    end
-
     if isDown({dude.keys[KEY_LEFT]}) then
         dude.moved = true
-        dude.pos.x = math.clamp(minx, dude.pos.x - (dt * speed), maxx)
+        dude.curr_speed = dude.curr_speed - (dt * dude.speed)
     elseif isDown({dude.keys[KEY_RIGHT]}) then
         dude.moved = true
-        dude.pos.x = math.clamp(minx, dude.pos.x + (dt * speed), maxy)
+        dude.curr_speed = dude.curr_speed + (dt * dude.speed)
+    else
+        local abs_speed = math.abs(dude.curr_speed)
+        if abs_speed < 5 then
+            dude.curr_speed = 0
+        else
+            local sign = dude.curr_speed / abs_speed
+            dude.curr_speed = sign * (abs_speed - (dt * dude.speed))
+        end
     end
+
+    local minmax = dude.speed * dude.slide
+    if dude.state ~= "moving" then
+        minmax = minmax * dude.slow_speed_mult
+    end
+    dude.curr_speed = math.clamp(-1 * minmax, dude.curr_speed, minmax)
+    dude.pos.x = math.clamp(minx, dude.pos.x + dude.curr_speed, maxx)
 end
 
 function love.draw()
