@@ -150,9 +150,14 @@ function updateDude(dt, dude)
     local maxx = w - dude.radius
     local maxy = h - dude.radius
 
+    local left_key = isDown({dude.keys[KEY_LEFT]})
+    local right_key = isDown({dude.keys[KEY_RIGHT]})
+    local up_key = isDown({dude.keys[KEY_UP]})
+    local down_key = isDown({dude.keys[KEY_DOWN]})
+
     if dude.state == "attacking" then
         dude.action_timer = dude.action_timer + dt
-        if not isDown({dude.keys[KEY_UP]}) or dude.action_timer > dude.attack_max or dude.force_cooldown then
+        if not up_key or dude.action_timer > dude.attack_max or dude.force_cooldown then
             dude.cooldown = math.clamp(dude.attack_min_cooldown, dude.action_timer, 2)
             dude.action_timer = 0
             dude.state = "cooldown"
@@ -160,7 +165,7 @@ function updateDude(dt, dude)
 
     elseif dude.state == "defending" then
         dude.action_timer = dude.action_timer + dt
-        if not isDown({dude.keys[KEY_DOWN]}) or dude.action_timer > dude.defend_max or dude.force_cooldown then
+        if not down_key or dude.action_timer > dude.defend_max or dude.force_cooldown then
             dude.cooldown = dude.defend_cooldown
             dude.action_timer = 0
             dude.state = "cooldown"
@@ -178,20 +183,21 @@ function updateDude(dt, dude)
     -- possible to go immediately from cooldown back to attacking/defending
     -- without a frame of moving in between, which creates some weird movement
     if dude.state == "moving" then
-        if isDown({dude.keys[KEY_UP]}) then
+        if up_key then
             dude.attacked = true
             dude.state = "attacking"
             love.audio.play(dude.shine_sound)
-        elseif isDown({dude.keys[KEY_DOWN]}) then
+        elseif down_key then
             dude.defended = true
             dude.state = "defending"
         end
     end
 
-    if isDown({dude.keys[KEY_LEFT]}) then
+    -- If both are pressed we want to not do anything
+    if left_key and not right_key then
         dude.moved = true
         dude.curr_speed = dude.curr_speed - (dt * dude.speed)
-    elseif isDown({dude.keys[KEY_RIGHT]}) then
+    elseif right_key and not left_key then
         dude.moved = true
         dude.curr_speed = dude.curr_speed + (dt * dude.speed)
     else
