@@ -14,12 +14,12 @@ function newGame()
     game = {
         state = "inplay", -- "ending"
         dudes = {
-            newDude({
+            newDude(1, {
                 pos = {x = w/2 - w/4, y = h/2},
                 color = {250, 60, 60},
                 keys = {"w", "s", "a", "d"},
             }),
-            newDude({
+            newDude(2, {
                 pos = {x = w/2 + w/4, y = h/2},
                 color = {60, 60, 250},
                 keys = {"up", "down", "left", "right"},
@@ -33,12 +33,14 @@ function newGame()
     return game
 end
 
-function newDude(opts)
+function newDude(i, opts)
     return {
+        i = i,
         pos = opts.pos or {x = w/2, y = h/2},
         radius = opts.radius or 50,
-        speed = opts.speed or 100,
-        slide = opts.slide or 0.1,
+        speed = opts.speed or 75,
+        max_speed = opts.max_speed or 20,
+        slide = opts.slide or 0.9,
         slow_speed_mult = opts.slow_speed_mult or 0.2,
         defend_cooldown = opts.defend_cooldown or 0.15,
         defend_max = opts.defend_max or 1,
@@ -49,7 +51,7 @@ function newDude(opts)
 
         shine_sound = opts.shine_sound or love.audio.newSource("assets/shine.wav", "static"),
 
-        state = "moving", -- "attacking", "defending", "cooldown", "dead"
+        state = "moving", -- "attacking", "defending", "cooldown", "hitstun", "dead"
         curr_speed = 0,
         force_cooldown = false,
         cooldown = 0,
@@ -92,7 +94,7 @@ function intersect(dude1, dude2)
     -- We buffer a bit so that the intersection isn't super slight
     local rsqr = dude2.radius + dude1.radius - 3
     rsqr = rsqr * rsqr
-    return (xsqr + ysqr) <= rsqr
+    return ((xsqr + ysqr) - rsqr) / rsqr
 end
 
 function love.update(dt)
@@ -120,35 +122,56 @@ function love.update(dt)
 
         for i = 1,#game.dudes do
             for j = i+1,#game.dudes do
-                dude1 = game.dudes[i]
-                dude2 = game.dudes[2]
-                if intersect(dude1, dude2) then
+                local dude1 = game.dudes[i]
+                local dude2 = game.dudes[2]
+                local int = intersect(dude1, dude2)
+                if int < 0 then
                     if dude1.state == "attacking" and dude2.state == "attacking" then
                         dude1.force_cooldown = true
                         dude2.force_cooldown = true
                     elseif dude1.state == "defending" or dude2.state == "defending" then
                         -- do nothing
                     elseif dude1.state == "attacking" then
-                        game.state = "ending"
-                        game.winner = i
-                        game.winner_delay_cur = game.winner_delay
+                        hit(int, dude1, dude2)
                     elseif dude2.state == "attacking" then
-                        game.state = "ending"
-                        game.winner = j
-                        game.winner_delay_cur = game.winner_delay
+                        hit(int, dude2, dude1)
                     end
                 end
             end
         end
+
+        local inbounds = {}
+        for i = 1,#game.dudes do
+            local dude = game.dudes[i]
+            if dude.pos.x > -1 * dude.radius and dude.pos.x < w + dude.radius then
+                table.insert(inbounds, dude)
+            end
+        end
+        if #inbounds == 1 then
+            won(inbounds[1])
+        end
     end
+end
+
+function won(dude)
+    game.state = "ending"
+    game.winner = dude.i
+    game.winner_delay_cur = game.winner_delay
+end
+
+function hit(int, dude1, dude2)
+    local absint = math.abs(int) * dude2.max_speed * dude2.slide
+    if dude1.pos.x > dude2.pos.x and dude2.curr_speed > -1 * absint then
+        dude2.curr_speed = -1 * absint
+    elseif dude1.pos.x < dude2.pos.x and dude2.curr_speed < absint then
+        dude2.curr_speed = absint
+    end
+    dude2.state = "hitstun"
+    dude2.cooldown = math.abs(int)
 end
 
 function updateDude(dt, dude)
     local w, h = love.graphics.getDimensions()
-    local minx = dude.radius
-    local miny = dude.radius
-    local maxx = w - dude.radius
-    local maxy = h - dude.radius
 
     local left_key = isDown({dude.keys[KEY_LEFT]})
     local right_key = isDown({dude.keys[KEY_RIGHT]})
@@ -171,7 +194,7 @@ function updateDude(dt, dude)
             dude.state = "cooldown"
         end
 
-    elseif dude.state == "cooldown" then
+    elseif dude.state == "cooldown" or dude.state == "hitstun" then
         dude.force_cooldown = false
         dude.cooldown = dude.cooldown - dt
         if dude.cooldown < 0 then
@@ -193,29 +216,34 @@ function updateDude(dt, dude)
         end
     end
 
+    local delta = 0
+
     -- If both are pressed we want to not do anything
     if left_key and not right_key then
         dude.moved = true
-        dude.curr_speed = dude.curr_speed - (dt * dude.speed)
+        delta = -1 * dt * dude.speed
     elseif right_key and not left_key then
         dude.moved = true
-        dude.curr_speed = dude.curr_speed + (dt * dude.speed)
+        delta = dt * dude.speed
     else
-        local abs_speed = math.abs(dude.curr_speed)
-        if abs_speed < 5 then
-            dude.curr_speed = 0
-        else
-            local sign = dude.curr_speed / abs_speed
-            dude.curr_speed = sign * (abs_speed - (dt * dude.speed))
-        end
+        local sign = dude.curr_speed / math.abs(dude.curr_speed)
+        delta = -1 * sign * dt * dude.speed * dude.slide
     end
 
-    local minmax = dude.speed * dude.slide
     if dude.state ~= "moving" then
-        minmax = minmax * dude.slow_speed_mult
+        delta = delta * dude.slow_speed_mult
     end
-    dude.curr_speed = math.clamp(-1 * minmax, dude.curr_speed, minmax)
-    dude.pos.x = math.clamp(minx, dude.pos.x + dude.curr_speed, maxx)
+
+    dude.curr_speed = dude.curr_speed + delta
+
+    -- There's no speed limit when in hitstun
+    if math.abs(dude.curr_speed) > 1 and dude.state ~= "histun" then
+        dude.curr_speed = math.clamp(-1 * dude.max_speed, dude.curr_speed, dude.max_speed)
+    else
+        dude.curr_speed = 0
+    end
+
+    dude.pos.x = dude.pos.x + dude.curr_speed
 end
 
 function love.draw()
@@ -248,7 +276,7 @@ function drawDude(dude)
     elseif dude.state == "defending" then
         alpha = 75
         action = "fill"
-    elseif dude.state == "cooldown" then
+    elseif dude.state == "cooldown" or dude.state == "hitstun" then
         alpha = 60
         --width = 1
     end
