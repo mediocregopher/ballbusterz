@@ -39,9 +39,8 @@ function newDude(i, opts)
         pos = opts.pos or {x = w/2, y = h/2},
         radius = opts.radius or 50,
         speed = opts.speed or 75,
-        max_speed = opts.max_speed or 20,
+        max_speed = opts.max_speed or 30,
         slide = opts.slide or 0.9,
-        slow_speed_mult = opts.slow_speed_mult or 0.2,
         defend_cooldown = opts.defend_cooldown or 0.15,
         defend_max = opts.defend_max or 1,
         attack_min_cooldown = opts.attack_min_cooldown or 0.25,
@@ -168,6 +167,7 @@ function hit(int, dude1, dude2)
     end
     dude2.state = "hitstun"
     dude2.cooldown = math.abs(int)
+    dude1.force_cooldown = true
 end
 
 function updateDude(dt, dude)
@@ -228,10 +228,6 @@ function updateDude(dt, dude)
     else
         local sign = dude.curr_speed / math.abs(dude.curr_speed)
         delta = -1 * sign * dt * dude.speed * dude.slide
-    end
-
-    if dude.state ~= "moving" then
-        delta = delta * dude.slow_speed_mult
     end
 
     dude.curr_speed = dude.curr_speed + delta
