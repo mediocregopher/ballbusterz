@@ -38,23 +38,33 @@ function newDude(i, opts)
         i = i,
         pos = opts.pos or {x = w/2, y = h/2},
         radius = opts.radius or 50,
-        speed = opts.speed or 75,
-        max_speed = opts.max_speed or 30,
-        slide = opts.slide or 0.9,
-        defend_cooldown = opts.defend_cooldown or 0.15,
-        defend_max = opts.defend_max or 1,
-        attack_min_cooldown = opts.attack_min_cooldown or 0.25,
-        attack_max = opts.attack_max or 0.75,
+
+        accel = 90,
+        max_speed = 750,
+        curr_speed = 0,
+
+        attack_timer = 0,
+        attack_duration = 0.1,
+        attack_cooldown_timer = 0,
+        attack_cooldown_duration = 0.25,
+        attack_hitstun_timer = 0,
+        attack_knockback_scalar = 1350,
+        attack_hitstun_scalar = 0.5, -- multiplied by the intersection amount
+
+        defend_timer = 0,
+        defend_duration = 0.5,
+        defend_cooldown_timer = 0,
+        defend_cooldown_duration = 0.25,
+
         color = opts.color or {0, 200, 0},
         keys = opts.keys or {"w", "s", "a", "d"},
 
         shine_sound = opts.shine_sound or love.audio.newSource("assets/shine.wav", "static"),
 
-        state = "moving", -- "attacking", "defending", "cooldown", "hitstun", "dead"
-        curr_speed = 0,
-        force_cooldown = false,
-        cooldown = 0,
-        action_timer = 0,
+        state = "neutral", -- "attacking", "defending", "cooldown", "hitstun", "dead"
+        --force_cooldown = false,
+        --cooldown = 0,
+        --action_timer = 0,
         moved = false,
         attacked = false,
         defended = false,
@@ -122,18 +132,25 @@ function love.update(dt)
         for i = 1,#game.dudes do
             for j = i+1,#game.dudes do
                 local dude1 = game.dudes[i]
-                local dude2 = game.dudes[2]
-                local int = intersect(dude1, dude2)
-                if int < 0 then
-                    if dude1.state == "attacking" and dude2.state == "attacking" then
-                        dude1.force_cooldown = true
-                        dude2.force_cooldown = true
-                    elseif dude1.state == "defending" or dude2.state == "defending" then
-                        -- do nothing
-                    elseif dude1.state == "attacking" then
-                        hit(int, dude1, dude2)
-                    elseif dude2.state == "attacking" then
-                        hit(int, dude2, dude1)
+                local dude2 = game.dudes[j]
+
+                -- if neither dude is attacking intersection doesn't matter
+                if dude1.state == "attacking" or dude2.state == "attacking" then
+                    local int = intersect(dude1, dude2)
+                    if int < 0 then
+                        int = math.abs(int)
+                        -- now int is a value [0,1], with 1 being total overlap
+                        if dude1.state == "attacking" and dude2.state == "attacking" then
+                            -- negated
+                        elseif dude1.state == "defending" then
+                            hit(int, dude1, dude2)
+                        elseif dude2.state == "defending" then
+                            hit(int, dude2, dude1)
+                        elseif dude1.state == "attacking" then
+                            hit(int, dude1, dude2)
+                        elseif dude2.state == "attacking" then
+                            hit(int, dude2, dude1)
+                        end
                     end
                 end
             end
@@ -159,15 +176,15 @@ function won(dude)
 end
 
 function hit(int, dude1, dude2)
-    local absint = math.abs(int) * dude2.max_speed * dude2.slide
-    if dude1.pos.x > dude2.pos.x and dude2.curr_speed > -1 * absint then
-        dude2.curr_speed = -1 * absint
-    elseif dude1.pos.x < dude2.pos.x and dude2.curr_speed < absint then
-        dude2.curr_speed = absint
+    love.audio.play(dude1.shine_sound)
+    if dude1.pos.x > dude2.pos.x then
+        dude2.curr_speed = -1 * int * dude1.attack_knockback_scalar
+    elseif dude1.pos.x < dude2.pos.x then
+        dude2.curr_speed = int * dude1.attack_knockback_scalar
     end
-    dude2.state = "hitstun"
-    dude2.cooldown = math.abs(int)
-    dude1.force_cooldown = true
+    dude2.state = "attack_hitstun"
+    dude2.attack_hitstun_timer = dude1.attack_hitstun_scalar * int
+    dude1.state = "start_attack_cooldown"
 end
 
 function updateDude(dt, dude)
@@ -178,68 +195,93 @@ function updateDude(dt, dude)
     local up_key = isDown({dude.keys[KEY_UP]})
     local down_key = isDown({dude.keys[KEY_DOWN]})
 
-    if dude.state == "attacking" then
-        dude.action_timer = dude.action_timer + dt
-        if not up_key or dude.action_timer > dude.attack_max or dude.force_cooldown then
-            dude.cooldown = math.clamp(dude.attack_min_cooldown, dude.action_timer, 2)
-            dude.action_timer = 0
-            dude.state = "cooldown"
+    local movement_delta = 0
+
+    if dude.state == "start_attacking" then
+        dude.state = "attacking"
+        dude.attack_timer = dude.attack_duration
+
+    elseif dude.state == "start_attack_cooldown" then
+        dude.state = "attack_cooldown"
+        dude.attack_cooldown_timer = dude.attack_cooldown_duration
+
+    elseif dude.state == "start_defending" then
+        dude.state = "defending"
+        dude.defend_timer = dude.defend_duration
+
+    elseif dude.state == "start_defend_cooldown" then
+        dude.state = "defend_cooldown"
+        dude.defend_cooldown_timer = dude.defend_cooldown_duration
+    end
+
+    if dude.state == "neutral" then
+        if up_key then
+            dude.attacked = true
+            dude.state = "start_attacking"
+        elseif down_key then
+            dude.defended = true
+            dude.state = "start_defending"
+        elseif left_key and not right_key then
+            dude.moved = true
+            movement_delta = -1 * dude.accel
+        elseif right_key and not left_key then
+            dude.moved = true
+            movement_delta = dude.accel
+        end
+
+    elseif dude.state == "attacking" then
+        dude.attack_timer = dude.attack_timer - dt
+        if not up_key or dude.attack_timer <= 0 then
+            dude.state = "start_attack_cooldown"
+        end
+
+    elseif dude.state == "attack_cooldown" then
+        dude.attack_cooldown_timer = dude.attack_cooldown_timer - dt
+        if dude.attack_cooldown_timer <= 0 then
+            dude.state = "neutral"
+        end
+
+    elseif dude.state == "attack_hitstun" then
+        dude.attack_hitstun_timer = dude.attack_hitstun_timer - dt
+        if dude.attack_hitstun_timer <= 0 then
+            dude.state = "neutral"
         end
 
     elseif dude.state == "defending" then
-        dude.action_timer = dude.action_timer + dt
-        if not down_key or dude.action_timer > dude.defend_max or dude.force_cooldown then
-            dude.cooldown = dude.defend_cooldown
-            dude.action_timer = 0
-            dude.state = "cooldown"
+        dude.defend_timer = dude.defend_timer - dt
+        if not down_key or dude.defend_timer <= 0 then
+            dude.state = "start_defend_cooldown"
         end
 
-    elseif dude.state == "cooldown" or dude.state == "hitstun" then
-        dude.force_cooldown = false
-        dude.cooldown = dude.cooldown - dt
-        if dude.cooldown < 0 then
-            dude.state = "moving"
+    elseif dude.state == "defend_cooldown" then
+        dude.defend_cooldown_timer = dude.defend_cooldown_timer - dt
+        if dude.defend_cooldown_timer <= 0 then
+            dude.state = "neutral"
         end
-    end
 
-    -- If we made this part of the if-else chain above then it wouldn't be
-    -- possible to go immediately from cooldown back to attacking/defending
-    -- without a frame of moving in between, which creates some weird movement
-    if dude.state == "moving" then
-        if up_key then
-            dude.attacked = true
-            dude.state = "attacking"
-            love.audio.play(dude.shine_sound)
-        elseif down_key then
-            dude.defended = true
-            dude.state = "defending"
-        end
-    end
-
-    local delta = 0
-
-    -- If both are pressed we want to not do anything
-    if left_key and not right_key then
-        dude.moved = true
-        delta = -1 * dt * dude.speed
-    elseif right_key and not left_key then
-        dude.moved = true
-        delta = dt * dude.speed
     else
-        local sign = dude.curr_speed / math.abs(dude.curr_speed)
-        delta = -1 * sign * dt * dude.speed * dude.slide
+        print("unknown state: "..dude.state)
+
     end
 
-    dude.curr_speed = dude.curr_speed + delta
+    -- if there was no player initiated movement slow down automatically
+    if movement_delta == 0 and dude.curr_speed ~= 0 then
+        local sign = dude.curr_speed / math.abs(dude.curr_speed)
+        movement_delta = -1 * sign * dude.accel
+    end
+
+    dude.curr_speed = dude.curr_speed + movement_delta
 
     -- There's no speed limit when in hitstun
-    if math.abs(dude.curr_speed) > 1 and dude.state ~= "histun" then
+    if dude.state ~= "attack_hitstun" then
         dude.curr_speed = math.clamp(-1 * dude.max_speed, dude.curr_speed, dude.max_speed)
-    else
+    end
+
+    if math.abs(dude.curr_speed) < (dude.accel / 2) then
         dude.curr_speed = 0
     end
 
-    dude.pos.x = dude.pos.x + dude.curr_speed
+    dude.pos.x = dude.pos.x + (dude.curr_speed * dt)
 end
 
 function love.draw()
@@ -265,16 +307,17 @@ function drawDude(dude)
     local action = "line"
     local width = 5
     local alpha = 255
-    if dude.state == "moving" then
+    if dude.state == "neutral" then
         -- we good
     elseif dude.state == "attacking" then
         action = "fill"
     elseif dude.state == "defending" then
         alpha = 75
         action = "fill"
-    elseif dude.state == "cooldown" or dude.state == "hitstun" then
+    elseif dude.state == "attack_cooldown" or
+        dude.state == "attack_hitstun" or
+        dude.state == "defend_cooldown" then
         alpha = 60
-        --width = 1
     end
     love.graphics.setColor(dude.color[1], dude.color[2], dude.color[3], alpha)
     love.graphics.setLineWidth(width)
